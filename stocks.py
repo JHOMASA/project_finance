@@ -192,38 +192,75 @@ def stock_analysis_chat(stock_data, ticker):
                     st.image(f"data:image/png;base64,{viz_data}", 
                             caption="Seasonal Pattern")
 
-def monte_carlo_chat(simulations, ticker):
-    terminal_prices = simulations[-1,:]
-    visual_data = {
-        "simulations": simulations.shape[1],
-        "prob_gain": f"{(terminal_prices > simulations[0,0]*1.1).mean()*100:.1f}%",
-        "prob_loss": f"{(terminal_prices < simulations[0,0]*0.9).mean()*100:.1f}%",
-        "worst_case": f"{np.percentile(terminal_prices, 5):.2f}"
-    }
-    
-    chat = FinGPTChat("monte_carlo", f"MC Simulation for {ticker}", visual_data)
-    
-    with st.expander("🔍 Risk Scenario Analysis"):
-        q = st.selectbox("Common risk questions:", [
-            "What are the key risk probabilities?",
-            "How should I interpret the worst-case scenario?",
-            "Custom question..."
-        ], key="mc_q")
-        
-        if q == "Custom question...":
-            q = st.text_input("Enter your question:", key="mc_custom")
-        
-        if q and q != "Custom question...":
-            response, viz_suggestions = chat.ask(q)
+def monte_carlo_simulation(stock_data, num_simulations=1000, days=252, method='basic'):
+    """
+    Enhanced Monte Carlo simulation with multiple methods
+    Options for method: 'basic', 'ets', 'stl'
+    """
+    try:
+        if stock_data.empty:
+            raise ValueError("No stock data available for simulation.")
+
+        returns = stock_data['Close'].pct_change().dropna()
+        if len(returns) < 2:
+            raise ValueError("Insufficient data to calculate returns.")
+
+        simulations = np.zeros((days, num_simulations))
+        S0 = stock_data['Close'].iloc[-1]
+
+        if method == 'basic':
+            mu = returns.mean()
+            sigma = returns.std()
             
-            st.markdown(f"**Risk Assessment**")
-            st.markdown(response)
+            for i in range(num_simulations):
+                daily_returns = np.random.normal(mu, sigma, days)
+                simulations[:, i] = S0 * (1 + daily_returns).cumprod()
+
+        elif method == 'ets':
+            model = ExponentialSmoothing(stock_data['Close'], trend='add', damped_trend=True).fit()
+            for i in range(num_simulations):
+                sim = model.simulate(days, repetitions=1, error_variance=model.sse/len(stock_data))
+                simulations[:, i] = sim.values.flatten()
+
+        elif method == 'stl':
+            stl = STL(stock_data['Close'], period=63).fit()
+            resid_std = stl.resid.std()
+            trend_component = np.linspace(stl.trend.iloc[-1],
+                                          stl.trend.iloc[-1] + (stl.trend.iloc[-1] - stl.trend.iloc[-2]) * days,
+                                          days)
+            seasonal_component = np.tile(stl.seasonal[-63:], days // 63 + 1)[:days]
             
-            if "probability_dist" in [v[0] for v in viz_suggestions]:
-                fig = go.Figure()
-                fig.add_trace(go.Histogram(x=terminal_prices, name="Outcomes"))
-                fig.update_layout(title="Terminal Price Distribution")
-                st.plotly_chart(fig)
+            for i in range(num_simulations):
+                noise = np.random.normal(0, resid_std, days)
+                simulations[:, i] = trend_component + seasonal_component + noise
+        
+        return simulations
+    
+    except Exception as e:
+        st.error(f"Error in Monte Carlo simulation ({method}): {e}")
+        return None
+
+# Streamlit UI for Risk Scenario Analysis
+st.sidebar.header("🔍 Risk Scenario Analysis")
+q = st.sidebar.selectbox("Common risk questions:", [
+    "What are the key risk probabilities?",
+    "How should I interpret the worst-case scenario?",
+    "Custom question..."
+], key="mc_q")
+
+if q == "Custom question...":
+    q = st.sidebar.text_input("Enter your question:", key="mc_custom")
+
+if q and q != "Custom question...":
+    st.subheader("Risk Assessment")
+    st.write("Response coming from AI model...")  # Placeholder for AI model integration
+    
+    # Monte Carlo Visualization
+    terminal_prices = monte_carlo_simulation(pd.DataFrame({'Close': np.random.rand(500) * 100}))[-1, :]
+    fig = go.Figure()
+    fig.add_trace(go.Histogram(x=terminal_prices, name="Outcomes"))
+    fig.update_layout(title="Terminal Price Distribution")
+    st.plotly_chart(fig)
 
 def financial_ratios_chat(ratios, ticker):
     chat = FinGPTChat("ratios", f"Ratios for {ticker}: {json.dumps(ratios)}")
@@ -538,80 +575,172 @@ def main():
                 recommendations_chat(recommendations, stock_ticker, financial_ratios)
 
     elif choice == "Predictions":
-        st.header("Predictions")
-        stock_ticker = st.text_input("Enter Stock Ticker", value="AAPL")
-        model_type = st.selectbox("Select Model", [
-            "LSTM", "XGBoost", "ARIMA", "Prophet", 
-            "Random Forest", "Linear Regression", "Moving Average"
-        ])
-        if st.button("Submit"):
-            stock_data = fetch_stock_data(stock_ticker)
-            if not stock_data.empty:
-                try:
-                    predictions = None
+    st.header("Predictions")
+    stock_ticker = st.text_input("Enter Stock Ticker", value="AAPL")
+    model_type = st.selectbox("Select Model", [
+        "LSTM", "XGBoost", "ARIMA", "Prophet", 
+        "Random Forest", "Linear Regression", "Moving Average",
+        "Holt-Winters", "ETS", "STL"
+    ])
+    
+    # Add seasonality configuration for time series models
+    if model_type in ["Holt-Winters", "ETS", "STL"]:
+        seasonality_type = st.radio(
+            "Select Seasonality Period",
+            ["Weekly (5 days)", "Monthly (21 days)", "Quarterly (63 days)"],
+            index=0  # Default to weekly
+        )
+        seasonal_periods = 5 if "Weekly" in seasonality_type else (21 if "Monthly" in seasonality_type else 63)
+    
+    if st.button("Submit"):
+        stock_data = fetch_stock_data(stock_ticker)
+        if not stock_data.empty:
+            try:
+                predictions = None
+                
+                # Machine Learning Models
+                if model_type == "LSTM":
+                    if len(stock_data) < 60:
+                        st.error("Error: Insufficient data for LSTM (requires at least 60 days).")
+                    else:
+                        model, scaler = train_lstm_model(stock_data)
+                        predictions = predict_lstm(model, scaler, stock_data)
+
+                elif model_type == "XGBoost":
+                    model = train_xgboost_model(stock_data)
+                    predictions = predict_xgboost(model, stock_data)
+
+                elif model_type == "ARIMA":
+                    model = train_arima_model(stock_data)
+                    predictions = predict_arima(model)
+
+                elif model_type == "Prophet":
+                    model = train_prophet_model(stock_data)
+                    predictions = predict_prophet(model)
+
+                elif model_type == "Random Forest":
+                    model = train_random_forest_model(stock_data)
+                    predictions = predict_random_forest(model, stock_data)
+
+                elif model_type == "Linear Regression":
+                    model = train_linear_regression_model(stock_data)
+                    predictions = predict_linear_regression(model, stock_data)
+
+                elif model_type == "Moving Average":
+                    predictions = predict_moving_average(stock_data)
+                
+                # Time Series Models with configurable seasonality
+                elif model_type == "Holt-Winters":
+                    model = ExponentialSmoothing(
+                        stock_data['Close'],
+                        trend='add',
+                        seasonal='add',
+                        seasonal_periods=seasonal_periods
+                    ).fit()
+                    predictions = model.forecast(30).values
+                
+                elif model_type == "ETS":
+                    model = ETSModel(
+                        stock_data['Close'],
+                        error='add',
+                        trend='add',
+                        seasonal='add',
+                        seasonal_periods=seasonal_periods,
+                        damped_trend=True
+                    ).fit()
+                    predictions = model.forecast(30)
+                
+                elif model_type == "STL":
+                    stl = STL(stock_data['Close'], period=seasonal_periods).fit()
+                    last_trend = stl.trend.iloc[-1]
+                    trend_slope = last_trend - stl.trend.iloc[-2]
+                    future_trend = [last_trend + i*trend_slope for i in range(1, 31)]
+                    seasonal_component = stl.seasonal.iloc[-seasonal_periods:].values[:30]
+                    predictions = np.array(future_trend) + seasonal_component
+
+                # Visualization
+                if predictions is not None:
+                    last_date = stock_data.index[-1]
+                    future_dates = pd.date_range(start=last_date, periods=31, freq='B')[1:]
                     
-                    if model_type == "LSTM":
-                        if len(stock_data) < 60:
-                            st.error("Error: Insufficient data for LSTM (requires at least 60 days).")
-                        else:
-                            model, scaler = train_lstm_model(stock_data)
-                            predictions = predict_lstm(model, scaler, stock_data)
-
-                    elif model_type == "XGBoost":
-                        model = train_xgboost_model(stock_data)
-                        predictions = predict_xgboost(model, stock_data)
-
-                    elif model_type == "ARIMA":
-                        model = train_arima_model(stock_data)
-                        predictions = predict_arima(model)
-
-                    elif model_type == "Prophet":
-                        model = train_prophet_model(stock_data)
-                        predictions = predict_prophet(model)
-
-                    elif model_type == "Random Forest":
-                        model = train_random_forest_model(stock_data)
-                        predictions = predict_random_forest(model, stock_data)
-
-                    elif model_type == "Linear Regression":
-                        model = train_linear_regression_model(stock_data)
-                        predictions = predict_linear_regression(model, stock_data)
-
-                    elif model_type == "Moving Average":
-                        predictions = predict_moving_average(stock_data)
-
-                    if predictions is not None:
-                        # Create a date range for the predictions
-                        last_date = stock_data.index[-1]
-                        future_dates = pd.date_range(start=last_date, periods=31, freq='B')[1:]
-
-                        if len(predictions) == len(future_dates):
-                            # Plot the graph
-                            fig = go.Figure()
+                    fig = go.Figure()
+                    fig.add_trace(go.Scatter(
+                        x=stock_data.index,
+                        y=stock_data['Close'],
+                        mode='lines',
+                        name='Historical Data'
+                    ))
+                    fig.add_trace(go.Scatter(
+                        x=future_dates,
+                        y=predictions,
+                        mode='lines+markers',
+                        name=f'Predicted ({model_type})',
+                        line=dict(color='red')
+                    ))
+                    
+                    # Add confidence intervals for probabilistic models
+                    if model_type in ["ETS", "ARIMA", "Prophet"]:
+                        if hasattr(model, 'get_prediction'):
+                            pred_results = model.get_prediction(start=future_dates[0], end=future_dates[-1])
+                            ci = pred_results.conf_int()
                             fig.add_trace(go.Scatter(
-                                x=stock_data.index,
-                                y=stock_data['Close'],
+                                x=future_dates,
+                                y=ci.iloc[:, 0],
+                                fill=None,
                                 mode='lines',
-                                name='Historical Data'
+                                line=dict(width=0),
+                                showlegend=False
                             ))
                             fig.add_trace(go.Scatter(
                                 x=future_dates,
-                                y=predictions,
+                                y=ci.iloc[:, 1],
+                                fill='tonexty',
                                 mode='lines',
-                                name='Predicted Data'
+                                line=dict(width=0),
+                                name='Confidence Interval'
                             ))
-                            fig.update_layout(
-                                title=f"Stock Price Predictions for {stock_ticker}",
-                                xaxis_title="Date",
-                                yaxis_title="Price"
-                            )
-                            st.plotly_chart(fig)
-                            
-                            # Add FinGPT chat
-                            predictions_chat(predictions, stock_ticker, model_type, stock_data)
+                    
+                    fig.update_layout(
+                        title=f"{stock_ticker} Price Forecast ({model_type}, {seasonality_type if model_type in ['Holt-Winters','ETS','STL'] else ''})",
+                        xaxis_title="Date",
+                        yaxis_title="Price",
+                        hovermode="x unified"
+                    )
+                    st.plotly_chart(fig)
+                    
+                    # Model evaluation metrics
+                    if len(stock_data) > 100:  # Only show if sufficient history
+                        with st.expander("Model Performance Metrics"):
+                            if model_type in ["Holt-Winters", "ETS", "STL"]:
+                                train = stock_data['Close'].iloc[:-30]
+                                test = stock_data['Close'].iloc[-30:]
+                                if model_type == "Holt-Winters":
+                                    fit_model = ExponentialSmoothing(
+                                        train,
+                                        trend='add',
+                                        seasonal='add',
+                                        seasonal_periods=seasonal_periods
+                                    ).fit()
+                                elif model_type == "ETS":
+                                    fit_model = ETSModel(
+                                        train,
+                                        error='add',
+                                        trend='add',
+                                        seasonal='add',
+                                        seasonal_periods=seasonal_periods
+                                    ).fit()
+                                
+                                preds = fit_model.forecast(30)
+                                mae = mean_absolute_error(test, preds)
+                                rmse = np.sqrt(mean_squared_error(test, preds))
+                                st.metric("MAE (30-day backtest)", f"${mae:.2f}")
+                                st.metric("RMSE (30-day backtest)", f"${rmse:.2f}")
 
-                except Exception as e:
-                    st.error(f"Error in predictions: {e}")
+                    predictions_chat(predictions, stock_ticker, model_type, stock_data)
+
+            except Exception as e:
+                st.error(f"Error in {model_type} predictions: {str(e)}")
+                st.exception(e) if st.checkbox("Show technical details") else None
 
 if __name__ == "__main__":
     main()
