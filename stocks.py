@@ -21,8 +21,8 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.linear_model import LinearRegression
 
 # Configuration
-FINGPT_API_KEY = "your-fingpt-api-key"  # Replace with actual key
-NEWS_API_KEY = "your-newsapi-key"      # Replace with actual key
+FINGPT_API_KEY = "AIzaTRDjNFU6WAx6FJ74zhm2vQqWyD5MsYKUcOk"  # Replace with actual key
+NEWS_API_KEY = "3f8e6bb1fb72490b835c800afcadd1aa"      # Replace with actual key
 
 # Enhanced FinGPTChat Class with Visualization
 class FinGPTChat:
