@@ -575,173 +575,173 @@ def main():
                 recommendations_chat(recommendations, stock_ticker, financial_ratios)
 
     elif choice == "Predictions":
-    st.header("Predictions")
-    stock_ticker = st.text_input("Enter Stock Ticker", value="AAPL")
-    model_type = st.selectbox("Select Model", [
-        "LSTM", "XGBoost", "ARIMA", "Prophet", 
-        "Random Forest", "Linear Regression", "Moving Average",
-        "Holt-Winters", "ETS", "STL"
-    ])
+        st.header("Predictions")
+        stock_ticker = st.text_input("Enter Stock Ticker", value="AAPL")
+        model_type = st.selectbox("Select Model", [
+            "LSTM", "XGBoost", "ARIMA", "Prophet", 
+            "Random Forest", "Linear Regression", "Moving Average",
+            "Holt-Winters", "ETS", "STL"
+        ])
     
-    # Add seasonality configuration for time series models
-    if model_type in ["Holt-Winters", "ETS", "STL"]:
-        seasonality_type = st.radio(
-            "Select Seasonality Period",
-            ["Weekly (5 days)", "Monthly (21 days)", "Quarterly (63 days)"],
-            index=0  # Default to weekly
-        )
-        seasonal_periods = 5 if "Weekly" in seasonality_type else (21 if "Monthly" in seasonality_type else 63)
+        # Add seasonality configuration for time series models
+        if model_type in ["Holt-Winters", "ETS", "STL"]:
+            seasonality_type = st.radio(
+                "Select Seasonality Period",
+                ["Weekly (5 days)", "Monthly (21 days)", "Quarterly (63 days)"],
+                index=0  # Default to weekly
+            )
+            seasonal_periods = 5 if "Weekly" in seasonality_type else (21 if "Monthly" in seasonality_type else 63)
     
-    if st.button("Submit"):
-        stock_data = fetch_stock_data(stock_ticker)
-        if not stock_data.empty:
-            try:
-                predictions = None
+        if st.button("Submit"):
+            stock_data = fetch_stock_data(stock_ticker)
+            if not stock_data.empty:
+                try:
+                    predictions = None
                 
-                # Machine Learning Models
-                if model_type == "LSTM":
-                    if len(stock_data) < 60:
-                        st.error("Error: Insufficient data for LSTM (requires at least 60 days).")
-                    else:
-                        model, scaler = train_lstm_model(stock_data)
-                        predictions = predict_lstm(model, scaler, stock_data)
+                    # Machine Learning Models
+                    if model_type == "LSTM":
+                        if len(stock_data) < 60:
+                            st.error("Error: Insufficient data for LSTM (requires at least 60 days).")
+                        else:
+                            model, scaler = train_lstm_model(stock_data)
+                            predictions = predict_lstm(model, scaler, stock_data)
 
-                elif model_type == "XGBoost":
-                    model = train_xgboost_model(stock_data)
-                    predictions = predict_xgboost(model, stock_data)
+                    elif model_type == "XGBoost":
+                        model = train_xgboost_model(stock_data)
+                        predictions = predict_xgboost(model, stock_data)
 
-                elif model_type == "ARIMA":
-                    model = train_arima_model(stock_data)
-                    predictions = predict_arima(model)
+                    elif model_type == "ARIMA":
+                        model = train_arima_model(stock_data)
+                        predictions = predict_arima(model)
 
-                elif model_type == "Prophet":
-                    model = train_prophet_model(stock_data)
-                    predictions = predict_prophet(model)
+                    elif model_type == "Prophet":
+                        model = train_prophet_model(stock_data)
+                        predictions = predict_prophet(model)
 
-                elif model_type == "Random Forest":
-                    model = train_random_forest_model(stock_data)
-                    predictions = predict_random_forest(model, stock_data)
+                    elif model_type == "Random Forest":
+                        model = train_random_forest_model(stock_data)
+                        predictions = predict_random_forest(model, stock_data)
 
-                elif model_type == "Linear Regression":
-                    model = train_linear_regression_model(stock_data)
-                    predictions = predict_linear_regression(model, stock_data)
+                    elif model_type == "Linear Regression":
+                        model = train_linear_regression_model(stock_data)
+                        predictions = predict_linear_regression(model, stock_data)
 
-                elif model_type == "Moving Average":
-                    predictions = predict_moving_average(stock_data)
+                    elif model_type == "Moving Average":
+                        predictions = predict_moving_average(stock_data)
                 
-                # Time Series Models with configurable seasonality
-                elif model_type == "Holt-Winters":
-                    model = ExponentialSmoothing(
-                        stock_data['Close'],
-                        trend='add',
-                        seasonal='add',
-                        seasonal_periods=seasonal_periods
-                    ).fit()
-                    predictions = model.forecast(30).values
+                    # Time Series Models with configurable seasonality
+                    elif model_type == "Holt-Winters":
+                        model = ExponentialSmoothing(
+                            stock_data['Close'],
+                            trend='add',
+                            seasonal='add',
+                            seasonal_periods=seasonal_periods
+                        ).fit()
+                        predictions = model.forecast(30).values
                 
-                elif model_type == "ETS":
-                    model = ETSModel(
-                        stock_data['Close'],
-                        error='add',
-                        trend='add',
-                        seasonal='add',
-                        seasonal_periods=seasonal_periods,
-                        damped_trend=True
-                    ).fit()
-                    predictions = model.forecast(30)
+                    elif model_type == "ETS":
+                        model = ETSModel(
+                            stock_data['Close'],
+                            error='add',
+                            trend='add',
+                            seasonal='add',
+                            seasonal_periods=seasonal_periods,
+                            damped_trend=True
+                        ).fit()
+                        predictions = model.forecast(30)
                 
-                elif model_type == "STL":
-                    stl = STL(stock_data['Close'], period=seasonal_periods).fit()
-                    last_trend = stl.trend.iloc[-1]
-                    trend_slope = last_trend - stl.trend.iloc[-2]
-                    future_trend = [last_trend + i*trend_slope for i in range(1, 31)]
-                    seasonal_component = stl.seasonal.iloc[-seasonal_periods:].values[:30]
-                    predictions = np.array(future_trend) + seasonal_component
+                    elif model_type == "STL":
+                        stl = STL(stock_data['Close'], period=seasonal_periods).fit()
+                        last_trend = stl.trend.iloc[-1]
+                        trend_slope = last_trend - stl.trend.iloc[-2]
+                        future_trend = [last_trend + i*trend_slope for i in range(1, 31)]
+                        seasonal_component = stl.seasonal.iloc[-seasonal_periods:].values[:30]
+                        predictions = np.array(future_trend) + seasonal_component
 
-                # Visualization
-                if predictions is not None:
-                    last_date = stock_data.index[-1]
-                    future_dates = pd.date_range(start=last_date, periods=31, freq='B')[1:]
+                    # Visualization
+                    if predictions is not None:
+                        last_date = stock_data.index[-1]
+                        future_dates = pd.date_range(start=last_date, periods=31, freq='B')[1:]
                     
-                    fig = go.Figure()
-                    fig.add_trace(go.Scatter(
-                        x=stock_data.index,
-                        y=stock_data['Close'],
-                        mode='lines',
-                        name='Historical Data'
-                    ))
-                    fig.add_trace(go.Scatter(
-                        x=future_dates,
-                        y=predictions,
-                        mode='lines+markers',
-                        name=f'Predicted ({model_type})',
-                        line=dict(color='red')
-                    ))
+                        fig = go.Figure()
+                        fig.add_trace(go.Scatter(
+                            x=stock_data.index,
+                            y=stock_data['Close'],
+                            mode='lines',
+                            name='Historical Data'
+                        ))
+                        fig.add_trace(go.Scatter(
+                            x=future_dates,
+                            y=predictions,
+                            mode='lines+markers',
+                            name=f'Predicted ({model_type})',
+                            line=dict(color='red')
+                        ))
                     
-                    # Add confidence intervals for probabilistic models
-                    if model_type in ["ETS", "ARIMA", "Prophet"]:
-                        if hasattr(model, 'get_prediction'):
-                            pred_results = model.get_prediction(start=future_dates[0], end=future_dates[-1])
-                            ci = pred_results.conf_int()
-                            fig.add_trace(go.Scatter(
-                                x=future_dates,
-                                y=ci.iloc[:, 0],
-                                fill=None,
-                                mode='lines',
-                                line=dict(width=0),
-                                showlegend=False
-                            ))
-                            fig.add_trace(go.Scatter(
-                                x=future_dates,
-                                y=ci.iloc[:, 1],
-                                fill='tonexty',
-                                mode='lines',
-                                line=dict(width=0),
-                                name='Confidence Interval'
-                            ))
+                        # Add confidence intervals for probabilistic models
+                        if model_type in ["ETS", "ARIMA", "Prophet"]:
+                            if hasattr(model, 'get_prediction'):
+                                pred_results = model.get_prediction(start=future_dates[0], end=future_dates[-1])
+                                ci = pred_results.conf_int()
+                                fig.add_trace(go.Scatter(
+                                    x=future_dates,
+                                    y=ci.iloc[:, 0],
+                                    fill=None,
+                                    mode='lines',
+                                    line=dict(width=0),
+                                    showlegend=False
+                                ))
+                                fig.add_trace(go.Scatter(
+                                    x=future_dates,
+                                    y=ci.iloc[:, 1],
+                                    fill='tonexty',
+                                    mode='lines',
+                                    line=dict(width=0),
+                                    name='Confidence Interval'
+                                ))
                     
-                    fig.update_layout(
-                        title=f"{stock_ticker} Price Forecast ({model_type}, {seasonality_type if model_type in ['Holt-Winters','ETS','STL'] else ''})",
-                        xaxis_title="Date",
-                        yaxis_title="Price",
-                        hovermode="x unified"
-                    )
-                    st.plotly_chart(fig)
+                        fig.update_layout(
+                            title=f"{stock_ticker} Price Forecast ({model_type}, {seasonality_type if model_type in ['Holt-Winters','ETS','STL'] else ''})",
+                            xaxis_title="Date",
+                            yaxis_title="Price",
+                            hovermode="x unified"
+                        )
+                        st.plotly_chart(fig)
                     
-                    # Model evaluation metrics
-                    if len(stock_data) > 100:  # Only show if sufficient history
-                        with st.expander("Model Performance Metrics"):
-                            if model_type in ["Holt-Winters", "ETS", "STL"]:
-                                train = stock_data['Close'].iloc[:-30]
-                                test = stock_data['Close'].iloc[-30:]
-                                if model_type == "Holt-Winters":
-                                    fit_model = ExponentialSmoothing(
-                                        train,
-                                        trend='add',
-                                        seasonal='add',
-                                        seasonal_periods=seasonal_periods
-                                    ).fit()
-                                elif model_type == "ETS":
-                                    fit_model = ETSModel(
-                                        train,
-                                        error='add',
-                                        trend='add',
-                                        seasonal='add',
-                                        seasonal_periods=seasonal_periods
-                                    ).fit()
+                        # Model evaluation metrics
+                        if len(stock_data) > 100:  # Only show if sufficient history
+                            with st.expander("Model Performance Metrics"):
+                                if model_type in ["Holt-Winters", "ETS", "STL"]:
+                                    train = stock_data['Close'].iloc[:-30]
+                                    test = stock_data['Close'].iloc[-30:]
+                                    if model_type == "Holt-Winters":
+                                        fit_model = ExponentialSmoothing(
+                                            train,
+                                            trend='add',
+                                            seasonal='add',
+                                            seasonal_periods=seasonal_periods
+                                        ).fit()
+                                    elif model_type == "ETS":
+                                        fit_model = ETSModel(
+                                            train,
+                                            error='add',
+                                            trend='add',
+                                            seasonal='add',
+                                            seasonal_periods=seasonal_periods
+                                        ).fit()
                                 
-                                preds = fit_model.forecast(30)
-                                mae = mean_absolute_error(test, preds)
-                                rmse = np.sqrt(mean_squared_error(test, preds))
-                                st.metric("MAE (30-day backtest)", f"${mae:.2f}")
-                                st.metric("RMSE (30-day backtest)", f"${rmse:.2f}")
+                                    preds = fit_model.forecast(30)
+                                    mae = mean_absolute_error(test, preds)
+                                    rmse = np.sqrt(mean_squared_error(test, preds))
+                                    st.metric("MAE (30-day backtest)", f"${mae:.2f}")
+                                    st.metric("RMSE (30-day backtest)", f"${rmse:.2f}")
 
-                    predictions_chat(predictions, stock_ticker, model_type, stock_data)
+                        predictions_chat(predictions, stock_ticker, model_type, stock_data)
 
-            except Exception as e:
-                st.error(f"Error in {model_type} predictions: {str(e)}")
-                st.exception(e) if st.checkbox("Show technical details") else None
+                except Exception as e:
+                    st.error(f"Error in {model_type} predictions: {str(e)}")
+                    st.exception(e) if st.checkbox("Show technical details") else None
 
-if __name__ == "__main__":
-    main()
+    if __name__ == "__main__":
+        main()
 
